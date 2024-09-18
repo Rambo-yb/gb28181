@@ -1,0 +1,8 @@
+build
+_install/
+.vscode/
+gsoap_tool/
+third_lib/*
+!third_lib/*.gz
+!third_lib/*.zip
+!third_lib/*.bz2
