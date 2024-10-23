@@ -6,3 +6,4 @@ third_lib/*
 !third_lib/*.gz
 !third_lib/*.zip
 !third_lib/*.bz2
+!third_lib/*.xz

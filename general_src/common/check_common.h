@@ -23,6 +23,18 @@
         err_opt; \
     }
 
+#define CHECK_LE(x, y, err_opt)   \
+    if (x <= y) {    \
+        LOG_ERR("%s:%d <= %s:%d", #x, x, #y, y);   \
+        err_opt; \
+    }
+
+#define CHECK_GT(x, y, err_opt)   \
+    if (x > y) {    \
+        LOG_ERR("%s:%d > %s:%d", #x, x, #y, y);   \
+        err_opt; \
+    }
+
 #define CHECK_GE(x, y, err_opt)   \
     if (x >= y) {    \
         LOG_ERR("%s:%d >= %s:%d", #x, x, #y, y);   \
