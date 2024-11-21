@@ -47,6 +47,14 @@
     }while(0);
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 int log_init(char* file, int size, int cnt, int lvl);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

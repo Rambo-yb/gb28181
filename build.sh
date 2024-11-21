@@ -19,6 +19,132 @@ fi
 CHIP_TYPE=$1
 INSTALL_DIR=$CUR_DIR/_install
 
+build_jthread()
+{
+    SOURCE_DIR=jthread-1.3.3
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/jthread
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf $SOURCE_DIR.tar.gz
+    cd $SOURCE_DIR
+    mkdir -p build && cd build
+    cmake .. -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_INSTALL_PREFIX=$SOURCE_INSTALL_DIR -DCMAKE_C_COMPILER=$HOST-gcc -DCMAKE_CXX_COMPILER=$HOST-g++ \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+        -DJTHREAD_COMPILE_STATIC_ONLY=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+}
+
+build_jrtplib()
+{
+    SOURCE_DIR=jrtplib-3.11.2
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/jrtplib
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf $SOURCE_DIR.tar.gz
+    cd $SOURCE_DIR
+    mkdir -p build && cd build
+    cmake .. -DCMAKE_SYSTEM_NAME=Linux -DCMAKE_INSTALL_PREFIX=$SOURCE_INSTALL_DIR -DCMAKE_C_COMPILER=$HOST-gcc -DCMAKE_CXX_COMPILER=$HOST-g++ \
+        -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY -DJRTPLIB_USE_BIGENDIAN=OFF\
+        -DJTHREAD_FOUND=1 -DJTHREAD_INCLUDE_DIRS="$INSTALL_DIR/jthread/include" -DJTHREAD_LIBRARIES="-L$INSTALL_DIR/jthread/lib -ljthread -lpthread"
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+
+    rm -r $SOURCE_INSTALL_DIR/lib/libjrtp.so*
+}
+
+build_openssl()
+{
+    SOURCE_DIR=openssl-1.1.1h
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/openssl
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf $SOURCE_DIR.tar.gz
+    cd $SOURCE_DIR
+    ./Configure no-asm no-shared no-async linux-generic32 --prefix=$SOURCE_INSTALL_DIR --cross-compile-prefix=$HOST-
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+}
+
+build_live555()
+{
+    SOURCE_DIR=live
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/live
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf ${SOURCE_DIR}555-latest.tar.gz
+    cd $SOURCE_DIR
+    cp $CUR_DIR/config.$CHIP_TYPE ./ -raf
+    export PREFIX_DIR="$INSTALL_DIR"
+    ./genMakefiles $CHIP_TYPE
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+}
+
+build_osip2()
+{
+    SOURCE_DIR=libosip2-5.3.0
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/osip2
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf $SOURCE_DIR.tar.gz
+    cd $SOURCE_DIR
+    ./configure --prefix=$SOURCE_INSTALL_DIR --host=$HOST --enable-shared=no --enable-static=yes
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+}
+
+build_exosip()
+{
+    SOURCE_DIR=exosip-5.3.0
+    SOURCE_INSTALL_DIR=$INSTALL_DIR/exosip
+
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_INSTALL_DIR ] && [ "$1" != "rebuild" ] && exit
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+    [ -d $SOURCE_INSTALL_DIR ] && rm -r $SOURCE_INSTALL_DIR
+
+    tar -xvzf $SOURCE_DIR.tar.gz
+    cd $SOURCE_DIR
+    ./autogen.sh
+    ./configure --prefix=$SOURCE_INSTALL_DIR --host=$HOST --enable-shared=no --enable-static=yes --disable-openssl \
+        OSIP_CFLAGS="-I$INSTALL_DIR/osip2/include" OSIP_LIBS="-L$INSTALL_DIR/osip2/lib -losip2 -losipparser2"
+    make && make install
+    
+    cd $CUR_DIR/third_lib
+    [ -d $SOURCE_DIR ] && rm -r $SOURCE_DIR
+}
+
 build_x264()
 {
     SOURCE_DIR=libx264-git
@@ -52,7 +178,7 @@ build_ffmpeg()
     cd $SOURCE_DIR
     export PKG_CONFIG_PATH="$INSTALL_DIR/x264/lib/pkgconfig:$PKG_CONFIG_PATH"
     ./configure --cross-prefix=$HOST- --enable-cross-compile --target-os=linux --cc=$HOST-gcc --arch=arm --prefix=$SOURCE_INSTALL_DIR \
-        --enable-static --enable-gpl --enable-nonfree --enable-swscale --enable-ffmpeg --disable-armv5te --disable-yasm --enable-libx264 \
+        --enable-static --enable-gpl --enable-nonfree --enable-swscale --enable-ffmpeg --disable-armv5te --disable-yasm --enable-libx264 --enable-protocol=rtmp \
         --extra-cflags=-I$INSTALL_DIR/x264/include --extra-ldflags=-L$INSTALL_DIR/x264/lib --extra-libs="-lpthread" --pkg-config="pkg-config --static"
     make -j4 && make install
     
@@ -164,6 +290,12 @@ build_main()
     cp gb28181_test /home/smb/work/ -raf
 }
 
+[ "$2" == "jthread" ] && build_jthread rebuild && exit
+[ "$2" == "jrtplib" ] && build_jrtplib rebuild && exit
+[ "$2" == "openssl" ] && build_openssl rebuild && exit
+[ "$2" == "live555" ] && build_live555 rebuild && exit
+[ "$2" == "osip2" ] && build_osip2 rebuild && exit
+[ "$2" == "exosip" ] && build_exosip rebuild && exit
 [ "$2" == "x264" ] && build_x264 rebuild && exit
 [ "$2" == "ffmpeg" ] && build_ffmpeg rebuild && exit
 [ "$2" == "pjsip" ] && build_pjsip rebuild && exit
@@ -173,11 +305,19 @@ build_main()
 [ "$2" == "main" ] && build_main && exit
 
 if [ "$2" == "" ]; then
-    build_x264
-    build_ffmpeg
-    build_pjsip
-    build_libuuid
-    build_alsa
+    # build_x264
+    # build_ffmpeg
+    # build_pjsip
+    # build_libuuid
+    # build_alsa
+    
+    # build_openssl
+    # build_live555
+
+    build_jthread
+    build_jrtplib
+    build_osip2
+    build_exosip
     build_mxml
     
     build_main
