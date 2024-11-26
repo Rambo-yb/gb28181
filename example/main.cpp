@@ -217,13 +217,14 @@ static int MediaInit() {
 
 #endif
 
+
 int main(int argc, char *argv[])
 {
     log_init((char*)"./gb28181.log", 512*1024, 3, 5);
     MediaInit();
     SipInit();
 
-    
+    SipRegister("192.168.110.168", 15060, "34020000002000000002", "12345678", "3402000000");
 
     while (1){
         sleep(1);
@@ -231,6 +232,8 @@ int main(int argc, char *argv[])
 
     // pthread_cancel(thread_id);
     // free(kMediaData);
+    
+    SipUnRegister();
     SipUnInit();
 
     return 0;

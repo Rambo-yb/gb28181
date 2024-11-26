@@ -9,6 +9,10 @@ int SipInit();
 
 void SipUnInit();
 
+int SipRegister(const char* rem_addr, int rem_port, const char* user, const char* password, const char* domain);
+
+void SipUnRegister();
+
 int SipPushStream(void* buff, int size);
 
 #ifdef __cplusplus
