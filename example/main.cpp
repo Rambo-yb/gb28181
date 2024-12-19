@@ -112,7 +112,7 @@ int MediaInit() {
     return 0;
 }
 
-#else
+#endif
 
 typedef struct {
     int size;
@@ -120,7 +120,8 @@ typedef struct {
 }Frame;
 
 std::list<Frame> kMediaList;
-unsigned char* kMediaData;
+unsigned char* kMediaData = NULL;
+int kRecordFlag = false;
 
 static unsigned char* FindFrame(const unsigned char* buff, int len, int* size) {
 	unsigned char *s = NULL;
@@ -160,17 +161,27 @@ static unsigned char* FindFrame(const unsigned char* buff, int len, int* size) {
 	return s;
 }
 
-void* VideoPush(void* arg) {
+static void* RecordPush(void* arg) {
     while(1) {
-        for(Frame frame : kMediaList) {
-            SipPushStream(frame.data, frame.size);
+		if (!kRecordFlag) {
+			usleep(10*1000);
+			continue;
+		}
 
+		int i = 0;
+        for(Frame frame : kMediaList) {
+            SipPushRecordStream(frame.data, frame.size, (++i == kMediaList.size()) ? true : false);
+			if (!kRecordFlag) {
+				break;
+			}
             usleep(40*1000);
         }
+
+		kRecordFlag = false;
     }
 }
 
-static int MediaInit() {
+static int MediaInitV2() {
     FILE* fp = fopen("recordfile01.h264", "r");
     if (fp == NULL) {
         return -1;
@@ -211,20 +222,19 @@ static int MediaInit() {
     printf("media size:%d len:%d\n", kMediaList.size(), size);
 
     pthread_t thread_id;
-    pthread_create(&thread_id, NULL, VideoPush, NULL);
+    pthread_create(&thread_id, NULL, RecordPush, NULL);
     return 0;
 }
-
-#endif
 
 
 int main(int argc, char *argv[])
 {
     log_init((char*)"./gb28181.log", 512*1024, 3, 5);
     MediaInit();
+    MediaInitV2();
     SipInit();
 
-    SipRegister("192.168.110.168", 15060, "34020000002000000002", "12345678", "3402000000");
+    SipRegister("192.168.110.124", 15060, "41010500002000000002", "12345678", "4101050000");
 
     while (1){
         sleep(1);

@@ -10,54 +10,68 @@
 using namespace jrtplib;
 
 typedef struct {
-    bool init;
+    int rtp_port;
     RTPSession sess;
     RTPSessionParams sess_param;
     RTPUDPv4TransmissionParams trans_param;
-}RtpMng;
-static RtpMng kRtpMng;
+}RtpInfo;
 
 #define RTP_TRANSPORT_PORT (4000)
+#define RTP_TRANSPORT_MAX_PORT (4010)
 #define RTP_MAX_PACKET_SIZE (1200)
 
-int RtpInit(const char* addr, int port, int ssrc) {
-    if (kRtpMng.init) {
-        return 0;
-    }
+void* RtpInit(const char* addr, int port, int ssrc) {
+    RtpInfo* info = new RtpInfo;
+    CHECK_POINTER(info, return NULL);
 
-    kRtpMng.sess_param.SetOwnTimestampUnit(1.0/90000.0);
-    kRtpMng.trans_param.SetPortbase(RTP_TRANSPORT_PORT);
-    // kRtpMng.sess_param.SetUsePredefinedSSRC(true);
-    // kRtpMng.sess_param.SetPredefinedSSRC(ssrc);
+    info->sess_param.SetOwnTimestampUnit(1.0/90000.0);
+    info->sess_param.SetUsePredefinedSSRC(true);
+    info->sess_param.SetPredefinedSSRC(ssrc);
 
-    int ret = kRtpMng.sess.Create(kRtpMng.sess_param, &kRtpMng.trans_param);
-    CHECK_LT(ret, 0, return -1);
+    info->rtp_port = RTP_TRANSPORT_PORT;
+    do {
+        info->trans_param.SetPortbase(info->rtp_port);
+        int ret = info->sess.Create(info->sess_param, &info->trans_param);
+        if (ret == 0) {
+            break;
+        }
+        LOG_INFO("%d", ret);
 
-    kRtpMng.sess.SetDefaultPayloadType(96);
-    kRtpMng.sess.SetDefaultMark(false);
-    kRtpMng.sess.SetDefaultTimestampIncrement(0);
+        if (info->rtp_port >= RTP_TRANSPORT_MAX_PORT) {
+            delete info;
+            LOG_ERR("rtp create fail !");
+            return NULL;
+        }
+        info->rtp_port += 2;
+        usleep(1000*100);
+    }while (1);
 
-    RtpAddDest(addr, port);
-    kRtpMng.init = true;
+    info->sess.SetDefaultPayloadType(96);
+    info->sess.SetDefaultMark(false);
+    info->sess.SetDefaultTimestampIncrement(0);
 
-    return 0;
+    RtpAddDest(info, addr, port);
+
+    return (void*)info;
 }
 
-void RtpUnInit() {
-    if (!kRtpMng.init) {
-        return ;
-    }
+void RtpUnInit(void* hander) {
+    CHECK_POINTER(hander, return);
+
+    RtpInfo* info = (RtpInfo* )hander;
 
 	RTPTime delay = RTPTime(1.0);
-    kRtpMng.sess.BYEDestroy(delay, "28181 stop play", strlen("28181 stop play"));
-    kRtpMng.init = false;
+    info->sess.BYEDestroy(delay, "28181 stop play", strlen("28181 stop play"));
+    
+    delete info;
 }
 
-int RtpAddDest(const char* addr, int port) {
+int RtpAddDest(void* hander, const char* addr, int port) {
+    CHECK_POINTER(hander, return -1);
     CHECK_POINTER(addr, return -1);
 
     RTPIPv4Address dest_addr(ntohl(inet_addr(addr)), port);
-    int ret = kRtpMng.sess.AddDestination(dest_addr);
+    int ret = ((RtpInfo*)hander)->sess.AddDestination(dest_addr);
     CHECK_LT(ret, 0, return -1);
 
     return 0;
@@ -101,7 +115,7 @@ static unsigned char* RtpFindNalu(const unsigned char* buff, int len, int* size)
 	return s;
 }
 
-static int RtpSendH264Packet(unsigned char* packet, int size) {
+static int RtpSendH264Packet(RtpInfo* info, unsigned char* packet, int size) {
     CHECK_BOOL(packet, return -1);
     CHECK_LE(size, 0, return -1);
 
@@ -118,7 +132,7 @@ static int RtpSendH264Packet(unsigned char* packet, int size) {
     unsigned int ts = 90000/25;
 
     if (size <= RTP_MAX_PACKET_SIZE) {
-        kRtpMng.sess.SendPacket((const void *)packet, size, RTP_PAYLOAD_H264, true, ts);
+        info->sess.SendPacket((const void *)packet, size, RTP_PAYLOAD_H264, true, ts);
     } else {
         int payload_len = RTP_MAX_PACKET_SIZE - 2;
         int offset = 1;
@@ -128,25 +142,25 @@ static int RtpSendH264Packet(unsigned char* packet, int size) {
         pkt[0] = (ualhdr & 0xe0) | 28;
         pkt[1] = (ualhdr & 0x1f) | 0x80;
         memcpy(pkt+2, packet+offset, RTP_MAX_PACKET_SIZE - 2);
-        kRtpMng.sess.SendPacket((const void *)pkt, RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_H264, false, 0);
+        info->sess.SendPacket((const void *)pkt, RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_H264, false, 0);
         offset += (RTP_MAX_PACKET_SIZE - 2);
 
         pkt[1] = packet[4] & 0x1f;
         while(offset + (RTP_MAX_PACKET_SIZE - 2) < size) {
             memcmp(pkt+2, packet+offset, RTP_MAX_PACKET_SIZE - 2);
-            kRtpMng.sess.SendPacket((const void *)pkt, RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_H264, false, 0);
+            info->sess.SendPacket((const void *)pkt, RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_H264, false, 0);
             offset += (RTP_MAX_PACKET_SIZE - 2);
         }
 
         pkt[1] = 0x40 | (packet[4] & 0x1F);
         memcmp(pkt+2, packet+offset, size - offset);
-        kRtpMng.sess.SendPacket((const void *)pkt, size - offset, RTP_PAYLOAD_H264, true, ts);
+        info->sess.SendPacket((const void *)pkt, size - offset, RTP_PAYLOAD_H264, true, ts);
     }
 
     return 0;
 }
 
-static int RtpTransH264(unsigned char* packet, int size) {
+static int RtpTransH264(RtpInfo* info, unsigned char* packet, int size) {
     int start = 0;
     while(start < size) {
         int len = 0;
@@ -155,7 +169,7 @@ static int RtpTransH264(unsigned char* packet, int size) {
             break;
         }
 
-        RtpSendH264Packet(p, len);
+        RtpSendH264Packet(info, p, len);
         start = p - packet + len;
     }
 
@@ -221,7 +235,7 @@ void RtpSetPesTimeStamp(unsigned char* buff, unsigned long long ts) {
 }
 
 int RtpGetSinglePesHeader(unsigned char* header, unsigned long long ts, int len) {
-    len += 13;
+    // len += 13;
     memcpy(header, kPesHead, sizeof(kPesHead));
     *(header+4) = (unsigned char)(len>>8);
     *(header+5) = (unsigned char)len;
@@ -254,23 +268,23 @@ int RtpGetPsHeader(unsigned char* header, int farme_type, unsigned long long ts,
 #define RTP_PS_HEAD_LEN (sizeof(kPsHead)+sizeof(kSysMapHead)+sizeof(kPesHead))
 #define RTP_PES_HEAD_LEN (sizeof(kPesHead))
 
-static int RtpSendPsPacket(unsigned char* packet, int size) {
+static int RtpSendPsPacket(RtpInfo* info, unsigned char* packet, int size) {
     CHECK_BOOL(packet, return -1);
     CHECK_LE(size, 0, return -1);
 
     int offset = 0;
     unsigned char pkt[RTP_MAX_PACKET_SIZE] = {0};
     while(offset + RTP_MAX_PACKET_SIZE < size) {
-        kRtpMng.sess.SendPacket((const void *)(packet + offset), RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_PS, false, 0);
+        info->sess.SendPacket((const void *)(packet + offset), RTP_MAX_PACKET_SIZE, RTP_PAYLOAD_PS, false, 0);
         offset += RTP_MAX_PACKET_SIZE;
     }
 
-    kRtpMng.sess.SendPacket((const void *)(packet + offset), size - offset, RTP_PAYLOAD_PS, true, 90000/25);
+    info->sess.SendPacket((const void *)(packet + offset), size - offset, RTP_PAYLOAD_PS, true, 90000/25);
 
     return 0;
 }
 
-static int RtpTransPs(unsigned char* packet, int size) {
+static int RtpTransPs(RtpInfo* info, unsigned char* packet, int size) {
     static unsigned long long ts = 0;
 
     int frame_type = 0;
@@ -286,9 +300,9 @@ static int RtpTransPs(unsigned char* packet, int size) {
     int len = size > RTP_MAX_PES_SIZE ? RTP_MAX_PES_SIZE : size;
 
     unsigned char ps_frame_buff[RTP_MAX_PS_SIZE];
-    RtpGetPsHeader(ps_frame_buff, frame_type, ts, len);
-    memcpy(ps_frame_buff + RTP_PS_HEAD_LEN, packet, len);
-    RtpSendPsPacket(ps_frame_buff, len);
+    int ret = RtpGetPsHeader(ps_frame_buff, frame_type, ts, len);
+    memcpy(ps_frame_buff + ret, packet, len);
+    RtpSendPsPacket(info, ps_frame_buff, len+ret);
     offset += len;
 
     while (offset < size) {
@@ -297,7 +311,7 @@ static int RtpTransPs(unsigned char* packet, int size) {
         memset(ps_frame_buff, 0, RTP_MAX_PS_SIZE);
         RtpGetSinglePesHeader(ps_frame_buff, 0, len);
         memcpy(ps_frame_buff + RTP_PES_HEAD_LEN, packet + offset, len);
-        RtpSendPsPacket(ps_frame_buff, len);
+        RtpSendPsPacket(info, ps_frame_buff, len+RTP_PES_HEAD_LEN);
         offset += len;
     }
  
@@ -305,17 +319,18 @@ static int RtpTransPs(unsigned char* packet, int size) {
     return 0;
 }
 
-int RtpPush(unsigned char* packet, int size) {
-    CHECK_BOOL(packet, return -1);
+int RtpPush(void* hander, unsigned char* packet, int size) {
+    CHECK_POINTER(hander, return -1);
+    CHECK_POINTER(packet, return -1);
     CHECK_LE(size, 0, return -1);
 
-    if (!kRtpMng.init) {
-        return 0;
-    }
+    // RtpTransH264((RtpInfo*)hander, packet, size);
 
-    // RtpTransH264(packet, size);
-
-    RtpTransPs(packet, size);
+    RtpTransPs((RtpInfo*)hander, packet, size);
 
     return 0;
+}
+
+int RtpTransportPort(void* hander) {
+    return ((RtpInfo*)hander)->rtp_port;
 }

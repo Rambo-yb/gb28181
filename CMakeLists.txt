@@ -8,7 +8,7 @@ aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/example MAIN_SRC)
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/src SRC)
 
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/general_src/common SRC)
-#aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/general_src/list SRC)
+aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/general_src/list SRC)
 
 #aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/third_src/cjson SRC)
 aux_source_directory(${CMAKE_CURRENT_SOURCE_DIR}/third_src/easylogger SRC)
@@ -18,7 +18,7 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/src)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/general_src/common)
-#include_directories(${CMAKE_CURRENT_SOURCE_DIR}/general_src/list)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/general_src/list)
 
 #include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_src/cjson)
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/third_src/easylogger)

@@ -8,13 +8,15 @@ extern "C" {
 #define RTP_PAYLOAD_H264 (98)
 #define RTP_PAYLOAD_PS (96)
 
-int RtpInit(const char* addr, int port, int ssrc);
+void* RtpInit(const char* addr, int port, int ssrc);
 
-void RtpUnInit();
+void RtpUnInit(void* hander);
 
-int RtpAddDest(const char* addr, int port);
+int RtpAddDest(void* hander, const char* addr, int port);
 
-int RtpPush(unsigned char* packet, int size);
+int RtpTransportPort(void* hander);
+
+int RtpPush(void* hander, unsigned char* packet, int size);
 
 #ifdef __cplusplus
 }

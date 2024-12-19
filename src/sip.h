@@ -15,6 +15,8 @@ void SipUnRegister();
 
 int SipPushStream(void* buff, int size);
 
+int SipPushRecordStream(void* buff, int size, int end);
+
 #ifdef __cplusplus
 }
 #endif
