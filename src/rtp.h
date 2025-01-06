@@ -5,10 +5,15 @@
 extern "C" {
 #endif
 
-#define RTP_PAYLOAD_H264 (98)
-#define RTP_PAYLOAD_PS (96)
+enum {
+	RTP_TRANSPORT_STREAM_UDP,
+	RTP_TRANSPORT_STREAM_TCP_ACTIVE,
+	RTP_TRANSPORT_STREAM_TCP_PASSIVE,
+};
 
-void* RtpInit(const char* addr, int port, int ssrc);
+void* RtpInit(int proto, const char* addr, int port, int ssrc);
+
+void* RtpInitV2(int proto, int sockfd, int ssrc);
 
 void RtpUnInit(void* hander);
 

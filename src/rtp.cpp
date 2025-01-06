@@ -6,51 +6,156 @@
 #include "rtpsessionparams.h"
 #include "rtpudpv4transmitter.h"
 #include "rtpsession.h"
+#include "rtptcptransmitter.h"
+#include "rtptcpaddress.h"
 
 using namespace jrtplib;
 
+#define RTP_PAYLOAD_H264 (98)
+#define RTP_PAYLOAD_PS (96)
+
 typedef struct {
+	int proto;
+	int tcp_sockfd;
     int rtp_port;
     RTPSession sess;
     RTPSessionParams sess_param;
-    RTPUDPv4TransmissionParams trans_param;
+    RTPUDPv4TransmissionParams udp_trans_param;
+	RTPTCPTransmitter* tcp_trans;
 }RtpInfo;
 
 #define RTP_TRANSPORT_PORT (4000)
 #define RTP_TRANSPORT_MAX_PORT (4010)
 #define RTP_MAX_PACKET_SIZE (1200)
 
-void* RtpInit(const char* addr, int port, int ssrc) {
+static int RtpCreateTcpClient(RtpInfo* info, const char* addr, int port) {
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	CHECK_LE(sockfd, 0, return -1);
+
+	struct sockaddr_in ser_addr;
+	memset(&ser_addr, 0, sizeof(struct sockaddr_in));
+	ser_addr.sin_family = AF_INET;
+	ser_addr.sin_port = htons(port);
+	inet_aton(addr, &ser_addr.sin_addr);
+	
+	int ret = connect(sockfd, (struct sockaddr*)&ser_addr, sizeof(ser_addr));
+	CHECK_LT(ret, 0, close(sockfd);return -1);
+	
+	struct sockaddr_in loc_addr;
+	socklen_t len = sizeof(loc_addr);
+	getsockname(sockfd, (struct sockaddr*)&loc_addr, &len);
+
+	info->tcp_sockfd = sockfd;
+	info->rtp_port = ntohs(loc_addr.sin_port);
+	LOG_INFO("sockfd:%d, loc port:%d", info->tcp_sockfd, info->rtp_port);
+
+	return 0;
+}
+
+#define MAX_CLIENT_NUM 5
+static int RtpCreateTcpServer(int port) {
+	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		perror("Failed to create socket");
+        return -1;
+    }
+	
+	int opt = 1;
+	setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, (const void*)&opt, sizeof(opt));
+
+	struct sockaddr_in serveraddr;
+	serveraddr.sin_family = AF_INET;
+    serveraddr.sin_port = htons(port);
+    serveraddr.sin_addr.s_addr = INADDR_ANY;
+	if (bind(sockfd, (struct sockaddr *)&serveraddr, sizeof(struct sockaddr_in)) < 0) {
+        perror("Failed to bind address");
+		close(sockfd);
+        return -1;
+    }
+	
+    if (listen(sockfd, MAX_CLIENT_NUM) < 0) {
+        perror("Failed to listen");
+		close(sockfd);
+        return -1;
+    }
+	
+	return sockfd;
+}
+
+void* RtpInit(int proto, const char* addr, int port, int ssrc) {
     RtpInfo* info = new RtpInfo;
     CHECK_POINTER(info, return NULL);
+
+	info->proto = proto;
 
     info->sess_param.SetOwnTimestampUnit(1.0/90000.0);
     info->sess_param.SetUsePredefinedSSRC(true);
     info->sess_param.SetPredefinedSSRC(ssrc);
 
-    info->rtp_port = RTP_TRANSPORT_PORT;
-    do {
-        info->trans_param.SetPortbase(info->rtp_port);
-        int ret = info->sess.Create(info->sess_param, &info->trans_param);
-        if (ret == 0) {
-            break;
-        }
-        LOG_INFO("%d", ret);
+	if (proto == RTP_TRANSPORT_STREAM_UDP) {
+		info->rtp_port = RTP_TRANSPORT_PORT;
+		do {
+			info->udp_trans_param.SetPortbase(info->rtp_port);
+			int ret = info->sess.Create(info->sess_param, &info->udp_trans_param);
+			if (ret == 0) {
+				break;
+			}
 
-        if (info->rtp_port >= RTP_TRANSPORT_MAX_PORT) {
-            delete info;
-            LOG_ERR("rtp create fail !");
-            return NULL;
-        }
-        info->rtp_port += 2;
-        usleep(1000*100);
-    }while (1);
+			if (info->rtp_port >= RTP_TRANSPORT_MAX_PORT) {
+				delete info;
+				LOG_ERR("rtp create fail !");
+				return NULL;
+			}
+			info->rtp_port += 2;
+			usleep(1000*100);
+		}while (1);
 
-    info->sess.SetDefaultPayloadType(96);
+		int ret = info->sess.AddDestination(RTPIPv4Address(ntohl(inet_addr(addr)), port));
+		CHECK_LT(ret, 0, delete info; return NULL);
+	} else {
+		int ret = RtpCreateTcpClient(info, addr, port);
+		CHECK_LT(ret, 0, delete info; return NULL);
+
+		info->tcp_trans = new RTPTCPTransmitter(NULL);
+		info->tcp_trans->Init(true);
+		info->tcp_trans->Create(65535, 0);
+		ret = info->sess.Create(info->sess_param, info->tcp_trans);
+		CHECK_LT(ret, 0, close(info->tcp_sockfd); delete info; return NULL);
+
+		ret = info->sess.AddDestination(RTPTCPAddress(info->tcp_sockfd));
+		CHECK_LT(ret, 0, close(info->tcp_sockfd); delete info; return NULL);
+	}
+
+    info->sess.SetDefaultPayloadType(RTP_PAYLOAD_PS);
     info->sess.SetDefaultMark(false);
     info->sess.SetDefaultTimestampIncrement(0);
 
-    RtpAddDest(info, addr, port);
+    return (void*)info;
+}
+
+void* RtpInitV2(int proto, int sockfd, int ssrc) {
+    RtpInfo* info = new RtpInfo;
+    CHECK_POINTER(info, return NULL);
+
+	info->proto = proto;
+	info->tcp_sockfd = sockfd;
+
+    info->sess_param.SetOwnTimestampUnit(1.0/90000.0);
+    info->sess_param.SetUsePredefinedSSRC(true);
+    info->sess_param.SetPredefinedSSRC(ssrc);
+
+	info->tcp_trans = new RTPTCPTransmitter(NULL);
+	info->tcp_trans->Init(true);
+	info->tcp_trans->Create(65535, 0);
+	int ret = info->sess.Create(info->sess_param, info->tcp_trans);
+	CHECK_LT(ret, 0, delete info; return NULL);
+
+	ret = info->sess.AddDestination(RTPTCPAddress(sockfd));
+	CHECK_LT(ret, 0, delete info; return NULL);
+
+    info->sess.SetDefaultPayloadType(RTP_PAYLOAD_PS);
+    info->sess.SetDefaultMark(false);
+    info->sess.SetDefaultTimestampIncrement(0);
 
     return (void*)info;
 }
@@ -63,6 +168,10 @@ void RtpUnInit(void* hander) {
 	RTPTime delay = RTPTime(1.0);
     info->sess.BYEDestroy(delay, "28181 stop play", strlen("28181 stop play"));
     
+	if (info->proto != RTP_TRANSPORT_STREAM_UDP) {
+		close(info->tcp_sockfd);
+	}
+
     delete info;
 }
 
